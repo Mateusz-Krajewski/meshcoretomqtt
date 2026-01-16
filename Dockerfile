@@ -5,20 +5,22 @@
 #     --device=/dev/ttyACM0 \
 #     meshcoretomqtt:latest
 
-FROM debian:bookworm
 
-ENV DEBIAN_FRONTEND=noninteractive
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /opt
 
 # Install dependencies
-RUN apt-get update && apt-get install -y \
-    python3-pip \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    libstdc++6 \
+    && pip3 install pyserial paho-mqtt --no-cache-dir \
+    && apt-get purge -y --auto-remove \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Python packages
-RUN pip install pyserial paho-mqtt --break-system-packages
 
 # Install Node.js via nvm and meshcore-decoder for auth token support
 ENV NVM_DIR=/root/.nvm
@@ -40,4 +42,4 @@ COPY ./.env /opt/
 # The .env file contains defaults, .env.local contains your overrides
 # Example: -v /path/to/.env.local:/opt/.env.local
 
-CMD ["/usr/bin/python3", "/opt/mctomqtt.py"]
+CMD ["python3", "/opt/mctomqtt.py"]
