@@ -5,39 +5,38 @@
 #     --device=/dev/ttyACM0 \
 #     meshcoretomqtt:latest
 
-FROM debian:bookworm
+# --- Etap 1: Builder ---
+FROM node:20-slim AS node-builder
+RUN npm install -g @michaelhart/meshcore-decoder
 
-ENV DEBIAN_FRONTEND=noninteractive
+# --- Etap 2: Finalny obraz ---
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /opt
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    python3-pip \
-    curl \
+# 1. Kopiujemy Node.js i moduły
+COPY --from=node-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+
+# 2. Tworzymy wrapper script, który uruchamia CLI z właściwego katalogu roboczego
+RUN echo '#!/bin/sh\ncd /usr/local/lib/node_modules/@michaelhart/meshcore-decoder && exec node dist/cli.js "$@"' > /usr/local/bin/meshcore-decoder && \
+    chmod +x /usr/local/bin/meshcore-decoder
+
+# 3. Instalujemy zależności systemowe i Pythona
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libstdc++6 \
+    && pip install --no-cache-dir pyserial paho-mqtt \
+    && apt-get purge -y --auto-remove \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python packages
-RUN pip install --no-cache-dir pyserial paho-mqtt --break-system-packages
+# 4. Kopiujemy pliki aplikacji
+COPY ./mctomqtt.py ./auth_token.py ./.env /opt/
 
-# Install Node.js via nvm and meshcore-decoder for auth token support
-ENV NVM_DIR=/root/.nvm
-ENV NODE_VERSION=lts/*
+# Weryfikacja: Sprawdzamy czy dekoder działa przed zakończeniem budowania
+RUN /usr/local/bin/meshcore-decoder --version
 
-RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash \
-    && . "$NVM_DIR/nvm.sh" \
-    && nvm install $NODE_VERSION \
-    && nvm use $NODE_VERSION \
-    && npm install -g @michaelhart/meshcore-decoder \
-    && ln -s "$NVM_DIR/versions/node/$(ls $NVM_DIR/versions/node | head -1)/bin/"* /usr/local/bin/
-
-# Copy application files
-COPY ./mctomqtt.py /opt/
-COPY ./auth_token.py /opt/
-COPY ./.env /opt/
-
-# Note: .env.local should be mounted as a volume with your configuration
-# The .env file contains defaults, .env.local contains your overrides
-# Example: -v /path/to/.env.local:/opt/.env.local
-
-CMD ["/usr/bin/python3", "/opt/mctomqtt.py"]
+CMD ["python3", "mctomqtt.py"]
