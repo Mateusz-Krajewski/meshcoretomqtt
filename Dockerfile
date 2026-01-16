@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python packages
-RUN pip install pyserial paho-mqtt --break-system-packages
+RUN pip install --no-cache-dir pyserial paho-mqtt --break-system-packages
 
 # Install Node.js via nvm and meshcore-decoder for auth token support
 ENV NVM_DIR=/root/.nvm
